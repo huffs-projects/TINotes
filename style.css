@@ -182,6 +182,14 @@ div#calculatorTypeSelector>div {
     resize: none;
 }
 
+textarea.editor[data-type="file"] {
+    width: min(100%, 60rem);
+    min-height: 20rem;
+    resize: vertical;
+    box-sizing: border-box;
+    overflow-x: auto;
+}
+
 /* equation editor */
 div#editField[data-type="equation"] input{
     height: 2em;

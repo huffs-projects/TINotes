@@ -484,6 +484,9 @@ function createFileEditor(id) {
     // NOTE: cols are one character bigger than actual calculator's
     // line lengths because that's the space for vertical scroll bar
     editor.cols = lineLength + 1;
+    // Keep visual wrapping disabled so line breaks are only the explicit
+    // newlines we insert for calculator width constraints.
+    editor.wrap = "off";
     editor.spellcheck = false;
     return editor;
 }
@@ -801,6 +804,43 @@ function convertToUppercase(str) {
     return result;
 }
 
+function wrapContentForCalculator(content, maxLineLength) {
+    const wrappedLines = content.split("\n").map((line) => {
+        if (line.length <= maxLineLength) {
+            return line;
+        }
+        const chunks = [];
+        let remaining = line;
+        while (remaining.length > maxLineLength) {
+            let wrapAt = remaining.lastIndexOf(" ", maxLineLength);
+            if (wrapAt <= 0) {
+                wrapAt = maxLineLength;
+                chunks.push(remaining.slice(0, wrapAt));
+                remaining = remaining.slice(wrapAt);
+            } else {
+                chunks.push(remaining.slice(0, wrapAt));
+                // Keep boundary spaces so original spacing is preserved exactly.
+                remaining = remaining.slice(wrapAt);
+            }
+        }
+        chunks.push(remaining);
+
+        // Keep total spacing unchanged, but avoid long leading spaces on wrapped
+        // lines by shifting boundary spaces back when prior line has capacity.
+        for (let i = 1; i < chunks.length; i++) {
+            while (
+                chunks[i].startsWith(" ") &&
+                chunks[i - 1].length < maxLineLength
+            ) {
+                chunks[i - 1] += " ";
+                chunks[i] = chunks[i].slice(1);
+            }
+        }
+        return chunks.join("\n");
+    });
+    return wrappedLines.join("\n");
+}
+
 function openFileEditField(itemName, itemInfo, position) {
     const editor = createFileEditor();
     editor.placeholder = "Write notes here"
@@ -821,28 +861,11 @@ function openFileEditField(itemName, itemInfo, position) {
             content = convertToUppercase(content);
         }
 
+        content = wrapContentForCalculator(content, lineLength);
+
         // update file size label
         updateItemSize(itemName, content);
 
-        console.log('TCL: openFileEditField -> content', content);
-        // pasting in more than one line of content
-        if (content.length - lastFileContent.length > lineLength) {
-            let start = lastFileContent.lastIndexOf("\n");
-            for (let end = 0; end < content.length; end++) {
-                if (end - start === lineLength) {
-                    content = insertSubstring(content, end + 1, "\n");
-                    end++; // move to the newly inserted "\n"
-                    start = end;
-                }
-            }
-        } else if (content.length >= lastFileContent.length) { // typing individual characters
-            const lastLineLength = content.length - content.lastIndexOf("\n") - 1;
-            console.log('TCL: openFileEditField -> lastLineLength', lastLineLength);
-            if (lastLineLength > lineLength) {
-                content = insertSubstring(content, content.length - 1, "\n", 0); // avoid word wrapping
-            }
-            console.log('TCL: openFileEditField -> content.length', content.length);
-        }
         editor.value = content;
         lastFileContent = content;
     });

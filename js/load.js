@@ -52,7 +52,7 @@ fallback.load({
                 "dist/js/utils.js",
                 "dist/js/script.js", "dist/js/equations.js", "dist/js/contextMenu.js",
                  "TI-BASIC/baseScript.txt", "dist/js/generateScript.js", "dist/js/popup.js", 
-                 "dist/js/introSteps.js", "dist/js/notebookMenu.js",
+                 "dist/js/introSteps.js", "dist/js/notebookMenu.js", "dist/js/transferData.js",
             ];
             dynamicallyLoadScripts(scripts);
         });
