@@ -19,14 +19,25 @@ if (importJsonInput) {
 async function exportNotebookJson() {
     try {
         const notebooks = {};
-        for (const notebookName of notebookNameList) {
-            const notebook = await getNotebookFromStorage(notebookName);
+        const selectedNotebookName = getCurrentSelectedNotebookName();
+        const currentNotebookSnapshot = getCurrentNotebookSnapshot();
+        const notebookNames = await getExportNotebookNames();
+        for (const notebookName of notebookNames) {
+            const notebook = await getStoredNotebook(notebookName);
             notebooks[notebookName] = notebook || {};
+        }
+        // If current in-memory notebook edits have not been persisted yet, ensure
+        // we still export them instead of producing an empty backup.
+        if (Object.keys(currentNotebookSnapshot).length > 0) {
+            const fallbackNotebookName = selectedNotebookName || "current-notebook";
+            if (notebooks[fallbackNotebookName] === undefined || Object.keys(notebooks[fallbackNotebookName]).length === 0) {
+                notebooks[fallbackNotebookName] = currentNotebookSnapshot;
+            }
         }
         const payload = {
             version: importFormatVersion,
             meta: {
-                selectedNotebookName,
+                selectedNotebookName: selectedNotebookName,
                 exportedAt: new Date().toISOString(),
             },
             notebooks,
@@ -47,7 +58,7 @@ async function exportNotebookJson() {
         console.error(error);
         swal({
             title: "Export failed",
-            text: "Unable to export notebooks to JSON.",
+            text: error.message || "Unable to export notebooks to JSON.",
             icon: "error",
             button: "OK",
         });
@@ -70,8 +81,8 @@ async function importNotebookJson(event) {
                 storePrevious: true,
                 storeSelected: true,
             });
-        } else if (selectedNotebookName) {
-            setSelectedNotebook(selectedNotebookName, {
+        } else if (getCurrentSelectedNotebookName()) {
+            setSelectedNotebook(getCurrentSelectedNotebookName(), {
                 storePrevious: false,
                 storeSelected: false,
             });
@@ -112,7 +123,8 @@ async function mergeImportedNotebooks(payload) {
     let renamedItemCount = 0;
     let firstImportedNotebookName;
 
-    const existingNotebookNames = new Set(notebookNameList);
+    const notebookNamesRef = getCurrentNotebookNameList();
+    const existingNotebookNames = new Set(notebookNamesRef);
     const importedNotebookNames = Object.keys(payload.notebooks);
     for (const importedNotebookName of importedNotebookNames) {
         const importedNotebook = payload.notebooks[importedNotebookName] || {};
@@ -126,7 +138,7 @@ async function mergeImportedNotebooks(payload) {
         importedItemCount += mergeResult.importedItemCount;
         await setNotebookInStorage(destinationNotebookName, mergeResult.notebook);
         if (!existingNotebookNames.has(destinationNotebookName)) {
-            notebookNameList.push(destinationNotebookName);
+            notebookNamesRef.push(destinationNotebookName);
             existingNotebookNames.add(destinationNotebookName);
         }
         importedNotebookCount++;
@@ -228,4 +240,70 @@ function downloadTextFile(filename, text) {
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
+}
+
+async function getExportNotebookNames() {
+    const notebookNames = getCurrentNotebookNameList();
+    if (notebookNames.length > 0) {
+        return notebookNames.filter((name) => typeof name === "string" && name.length > 0);
+    }
+    if (typeof localforage !== "undefined" && typeof localforage.keys === "function") {
+        return localforage.keys();
+    }
+    return [];
+}
+
+async function getStoredNotebook(notebookName) {
+    if (typeof getNotebookFromStorage === "function") {
+        return getNotebookFromStorage(notebookName);
+    }
+    if (typeof localforage !== "undefined" && typeof localforage.getItem === "function") {
+        return localforage.getItem(notebookName);
+    }
+    throw new Error("Notebook storage backend is unavailable.");
+}
+
+function getCurrentNotebookNameList() {
+    try {
+        if (Array.isArray(notebookNameList)) {
+            return notebookNameList;
+        }
+    } catch (error) {
+        // Swallow TDZ/global access errors and fall back to storage lookup.
+    }
+    return [];
+}
+
+function getCurrentSelectedNotebookName() {
+    try {
+        if (typeof selectedNotebookName === "string") {
+            return selectedNotebookName;
+        }
+    } catch (error) {
+        // Swallow TDZ/global access errors and default to empty.
+    }
+    return "";
+}
+
+function getCurrentNotebookSnapshot() {
+    const snapshot = {};
+    if (typeof localStorage === "undefined") {
+        return snapshot;
+    }
+    for (let i = 0; i < localStorage.length; i++) {
+        const itemName = localStorage.key(i);
+        const rawValue = localStorage.getItem(itemName);
+        if (!rawValue) {
+            continue;
+        }
+        try {
+            const item = JSON.parse(rawValue);
+            if (item && typeof item === "object" && typeof item.type === "string") {
+                snapshot[itemName] = item;
+            }
+        } catch (error) {
+            // Ignore unrelated localStorage keys that are not JSON note items.
+        }
+    }
+    return snapshot;
 }
