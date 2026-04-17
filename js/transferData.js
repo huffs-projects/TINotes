@@ -106,19 +106,24 @@ async function importNotebookJson(event) {
 }
 
 function validateImportPayload(payload) {
-    if (!(payload instanceof Object)) {
+    if (!isObjectRecord(payload)) {
         throw new Error("Import file must be a JSON object.");
     }
     if (payload.version !== importFormatVersion) {
         throw new Error(`Unsupported import version: ${payload.version}.`);
     }
-    if (!(payload.notebooks instanceof Object) || Array.isArray(payload.notebooks)) {
+    if (!isObjectRecord(payload.notebooks)) {
         throw new Error("Import file is missing a valid notebooks object.");
     }
+    Object.keys(payload.notebooks).forEach((notebookName) => {
+        if (!isObjectRecord(payload.notebooks[notebookName])) {
+            throw new Error(`Notebook "${notebookName}" must be a JSON object.`);
+        }
+    });
 }
 
 function normalizeImportPayload(payload) {
-    if (!(payload instanceof Object) || Array.isArray(payload)) {
+    if (!isObjectRecord(payload)) {
         return payload;
     }
     const hasVersion = Object.prototype.hasOwnProperty.call(payload, "version");
@@ -133,6 +138,10 @@ function normalizeImportPayload(payload) {
         },
         notebooks: payload,
     };
+}
+
+function isObjectRecord(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 async function mergeImportedNotebooks(payload) {
@@ -159,6 +168,12 @@ async function mergeImportedNotebooks(payload) {
         if (!existingNotebookNames.has(destinationNotebookName)) {
             notebookNamesRef.push(destinationNotebookName);
             existingNotebookNames.add(destinationNotebookName);
+            if (typeof displayNotebookLabel === "function" && typeof document !== "undefined") {
+                const existingLabel = document.querySelector(`#sidebar li[data-name="${destinationNotebookName}"]`);
+                if (!existingLabel) {
+                    displayNotebookLabel(destinationNotebookName);
+                }
+            }
         }
         importedNotebookCount++;
         if (!firstImportedNotebookName) {

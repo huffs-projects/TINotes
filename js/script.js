@@ -12,6 +12,7 @@ const clearBtn = document.getElementById("clearBtn");
 const system = document.getElementById("system");
 const navigationBar = document.getElementById("navigationBar");
 const homePosition = "home";
+const notebookStorageKeyPrefix = "tinotes:notebook:";
 let position = homePosition; // default root location for the file system
 const itemNameList = [];
 // valid types of note items
@@ -235,7 +236,13 @@ function displayItemPlaceholder() {
 function iterateStorage(func) {
     for (let index = 0; index < localStorage.length; index++) {
         const itemName = localStorage.key(index);
+        if (!itemName || itemName.startsWith(notebookStorageKeyPrefix)) {
+            continue;
+        }
         const item = getItemFromStorage(itemName);
+        if (!item || typeof item !== "object" || typeof item.type !== "string") {
+            continue;
+        }
         func(item, itemName, item.type, item.position, index);
     }
 }
@@ -735,17 +742,35 @@ function removeItemFromStorage(itemName) {
 }
 
 function getItemFromStorage(itemName) {
-    return JSON.parse(localStorage.getItem(itemName));
+    const rawValue = localStorage.getItem(itemName);
+    if (!rawValue) {
+        return null;
+    }
+    try {
+        return JSON.parse(rawValue);
+    } catch (error) {
+        console.warn(`Skipping invalid storage entry: ${itemName}`, error);
+        return null;
+    }
 }
 
 function setItemInStorage(itemName, item) {
+    if (!item || typeof item !== "object") {
+        return;
+    }
     // store item itself
     localStorage.setItem(itemName, JSON.stringify(item));
     // update linked item
-    if (item.link) {
+    if (typeof item.link === "string" && item.link.length > 0) {
         const linkedItemName = item.link;
         console.log('TCL: setItemInStorage -> linkedItemName', linkedItemName);
-        const linkedItem = clone(item);
+        let linkedItem;
+        try {
+            linkedItem = clone(item);
+        } catch (error) {
+            console.warn(`Skipping invalid linked item clone for ${itemName}.`, error);
+            return;
+        }
         const storedLinkedItem = getItemFromStorage(linkedItemName);
         if (storedLinkedItem) {
             linkedItem.position = storedLinkedItem.position;

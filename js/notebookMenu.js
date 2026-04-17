@@ -1,12 +1,14 @@
+const notebookStoragePrefix = "tinotes:notebook:";
+const notebookStorage = createNotebookStorageBackend();
 // set drivers for localforage, excluding localstorage
-localforage.setDriver([localforage.WEBSQL, localforage.INDEXEDDB]);
+notebookStorage.setDriver([notebookStorage.WEBSQL, notebookStorage.INDEXEDDB]);
 // separate instance for storing meta info
-const metaInfo = localforage.createInstance({
+const metaInfo = notebookStorage.createInstance({
     name: "metaInfo"
 });
-metaInfo.setDriver([localforage.WEBSQL, localforage.INDEXEDDB]);
+metaInfo.setDriver([notebookStorage.WEBSQL, notebookStorage.INDEXEDDB]);
 
-localforage.iterate((value, key) => {console.log(key, value)})
+notebookStorage.iterate((value, key) => {console.log(key, value)})
 
 const toggleBtn = document.querySelector('#hamburger-icon.toggle-btn');
 const sidebar = document.getElementById("sidebar");
@@ -171,9 +173,15 @@ function setSelectedNotebook(notebookName, opts) {
     function switchToNewNotebook() {
         // switch to newly selected notebook
         selectedNotebookName = notebookName;
-        const notebookLabel = notebookMenu.querySelector(`li[data-name="${notebookName}"]`);
+        let notebookLabel = notebookMenu.querySelector(`li[data-name="${notebookName}"]`);
+        if (!notebookLabel) {
+            displayNotebookLabel(notebookName);
+            notebookLabel = notebookMenu.querySelector(`li[data-name="${notebookName}"]`);
+        }
 		// console.log('TCL: switchToNewNotebook -> notebookLabel', notebookLabel);
-        notebookLabel.classList.add("selected");
+        if (notebookLabel) {
+            notebookLabel.classList.add("selected");
+        }
         // load the selected notebook
         loadNotebook(notebookName);
 
@@ -222,9 +230,14 @@ function loadNotebookMenu() {
 function getCurrentNotebook() {
     const notebook = {};
     Object.keys(localStorage).forEach(key => {
-        // console.log('TCL: key', key);
-        notebook[key] = getItemFromStorage(key);
-    })
+        if (key.startsWith(notebookStoragePrefix)) {
+            return;
+        }
+        const item = getItemFromStorage(key);
+        if (item && typeof item === "object" && typeof item.type === "string") {
+            notebook[key] = item;
+        }
+    });
     return notebook;
 }
 
@@ -305,22 +318,22 @@ function removeNotebook(notebookLabel) {
 // Remove all items from storage and delete all labels!!!
 function clearSelectedNotebook() {
     clearAllItems();
-    localStorage.clear();
+    clearCurrentNotebookCache();
 }
 
 function removeNotebookFromStorage(notebookName) {
     console.log('TCL: removeNotebookFromStorage -> removeNotebookFromStorage', notebookName);
-    return localforage.removeItem(notebookName).catch(function (err) {
+    return notebookStorage.removeItem(notebookName).catch(function (err) {
         console.log(err);
     });
 }
 
 function getNotebookFromStorage(notebookName) {
-    return localforage.getItem(notebookName);
+    return notebookStorage.getItem(notebookName);
 }
 
 function setNotebookInStorage(notebookName, notebook) {
-    return localforage.setItem(notebookName, notebook).catch(err => {
+    return notebookStorage.setItem(notebookName, notebook).catch(err => {
         console.log(err);
     });
 }
@@ -328,6 +341,97 @@ function setNotebookInStorage(notebookName, notebook) {
 function clearAllStorage(){
     notebookNameList = [];
     localStorage.clear();
-    localforage.clear();
+    notebookStorage.clear();
     metaInfo.clear();
+}
+
+function createNotebookStorageBackend() {
+    if (typeof localforage !== "undefined" && localforage) {
+        return localforage;
+    }
+    console.warn("localforage is unavailable; falling back to localStorage-backed notebook storage.");
+    return createLocalStorageStore(notebookStoragePrefix);
+}
+
+function clearCurrentNotebookCache() {
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || key.startsWith(notebookStoragePrefix)) {
+            continue;
+        }
+        const rawValue = localStorage.getItem(key);
+        if (!rawValue) {
+            continue;
+        }
+        try {
+            const parsedValue = JSON.parse(rawValue);
+            if (parsedValue && typeof parsedValue === "object" && typeof parsedValue.type === "string") {
+                keysToRemove.push(key);
+            }
+        } catch (error) {
+            // Ignore non-JSON localStorage keys that do not represent notebook cache entries.
+        }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+}
+
+function createLocalStorageStore(prefix) {
+    function parseStoredValue(rawValue, key) {
+        if (rawValue === null) {
+            return null;
+        }
+        try {
+            return JSON.parse(rawValue);
+        } catch (error) {
+            console.warn(`Unable to parse stored value for ${key}.`, error);
+            return null;
+        }
+    }
+
+    function createScopedStore(scopePrefix) {
+        return {
+            WEBSQL: "WEBSQL",
+            INDEXEDDB: "INDEXEDDB",
+            setDriver: () => Promise.resolve(),
+            createInstance: ({ name }) => createScopedStore(`${scopePrefix}${name}:`),
+            iterate: (iterator) => {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (!key || !key.startsWith(scopePrefix)) {
+                        continue;
+                    }
+                    const cleanKey = key.slice(scopePrefix.length);
+                    iterator(parseStoredValue(localStorage.getItem(key), cleanKey), cleanKey);
+                }
+                return Promise.resolve();
+            },
+            removeItem: (key) => {
+                localStorage.removeItem(`${scopePrefix}${key}`);
+                return Promise.resolve();
+            },
+            getItem: (key) => Promise.resolve(parseStoredValue(localStorage.getItem(`${scopePrefix}${key}`), key)),
+            setItem: (key, value) => {
+                try {
+                    localStorage.setItem(`${scopePrefix}${key}`, JSON.stringify(value));
+                    return Promise.resolve(value);
+                } catch (error) {
+                    return Promise.reject(error);
+                }
+            },
+            clear: () => {
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith(scopePrefix)) {
+                        keysToRemove.push(key);
+                    }
+                }
+                keysToRemove.forEach((key) => localStorage.removeItem(key));
+                return Promise.resolve();
+            },
+        };
+    }
+
+    return createScopedStore(prefix);
 }

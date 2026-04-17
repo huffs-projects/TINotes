@@ -13,38 +13,38 @@ fallback.load({
             // JavaScript library. THE KEY MUST BE THE LIBRARIES WINDOW VARIABLE!
             // load sweet alert for beautiful popups: https://github.com/t4t5/sweetalert
             'swal': [
-                '//unpkg.com/sweetalert/dist/sweetalert.min.js',
-                '//cdn.jsdelivr.net/npm/sweetalert',
+                'https://unpkg.com/sweetalert/dist/sweetalert.min.js',
+                'https://cdn.jsdelivr.net/npm/sweetalert',
                 'lib/sweetalert/sweetalert.min.js'
             ],
 
             // load Mousetrap for keyboard shortcuts: https://github.com/ccampbell/mousetrap
             'Mousetrap': [
-                '//cdnjs.cloudflare.com/ajax/libs/mousetrap/1.6.2/mousetrap.min.js',
+                'https://cdnjs.cloudflare.com/ajax/libs/mousetrap/1.6.2/mousetrap.min.js',
                 'lib/mousetrap/mousetrap.min.js',
             ],
 
             // load introjs for step-by-step introduction to my web app:
             // https://github.com/usablica/intro.js
             'introJs': [
-                '//cdn.jsdelivr.net/npm/intro.js@2.9.3/minified/intro.min.js',
-                '//cdnjs.cloudflare.com/ajax/libs/intro.js/2.9.3/intro.min.js',
+                'https://cdn.jsdelivr.net/npm/intro.js@2.9.3/minified/intro.min.js',
+                'https://cdnjs.cloudflare.com/ajax/libs/intro.js/2.9.3/intro.min.js',
                 'lib/introjs/intro.min.js'
             ],
 
             'Guppy': [
-                '//guppy.js.org/build/guppy.js',
+                'https://guppy.js.org/build/guppy.js',
                 'lib/guppy-js/guppy.js',
             ],
             'GuppyOSK': [
-                '//guppy.js.org/build/guppy_osk.js',
+                'https://guppy.js.org/build/guppy_osk.js',
                 'lib/guppy-js/guppy_osk.js',
             ],
             'Algebrite': [
-                '//cdn.jsdelivr.net/npm/algebrite@1.2.0/dist/algebrite.bundle-for-browser.min.js',
+                'https://cdn.jsdelivr.net/npm/algebrite@1.2.0/dist/algebrite.bundle-for-browser.min.js',
             ],
             'localforage': [
-                '//cdn.jsdelivr.net/npm/localforage@1.7.3/dist/localforage.min.js',
+                'https://cdn.jsdelivr.net/npm/localforage@1.7.3/dist/localforage.min.js',
             ],
         }); 
         fallback.ready(function () {
