@@ -47,6 +47,16 @@ i.fa-calculator, i.fa-link{
     background: #ddd;
 }
 
+.btn.btn-disabled {
+    opacity: 0.65;
+    cursor: wait;
+    pointer-events: none;
+}
+
+#download8xpBtn {
+    font-weight: 600;
+}
+
 .infoBtn{
     cursor: pointer;
     font-size: .5em;
@@ -350,6 +360,14 @@ div.guppy_osk > div.tabbar > ul{
   .modal-footer {
     padding: 1.5em 16px;
     background-color: #5cb85c;
+  }
+
+  .modal-footer .btn {
+    margin-right: 0.5em;
+  }
+
+  .modal-footer .btn:last-child {
+    margin-right: 0;
   }
   
   /* Modal Content */
