@@ -73,8 +73,9 @@ async function importNotebookJson(event) {
         }
         const text = await readFileText(file);
         const parsed = JSON.parse(text);
-        validateImportPayload(parsed);
-        const result = await mergeImportedNotebooks(parsed);
+        const normalizedPayload = normalizeImportPayload(parsed);
+        validateImportPayload(normalizedPayload);
+        const result = await mergeImportedNotebooks(normalizedPayload);
         await storeMetaInfo();
         if (result.firstImportedNotebookName) {
             setSelectedNotebook(result.firstImportedNotebookName, {
@@ -114,6 +115,24 @@ function validateImportPayload(payload) {
     if (!(payload.notebooks instanceof Object) || Array.isArray(payload.notebooks)) {
         throw new Error("Import file is missing a valid notebooks object.");
     }
+}
+
+function normalizeImportPayload(payload) {
+    if (!(payload instanceof Object) || Array.isArray(payload)) {
+        return payload;
+    }
+    const hasVersion = Object.prototype.hasOwnProperty.call(payload, "version");
+    const hasNotebooks = Object.prototype.hasOwnProperty.call(payload, "notebooks");
+    if (hasVersion || hasNotebooks) {
+        return payload;
+    }
+    return {
+        version: importFormatVersion,
+        meta: {
+            importedFromLegacyFormat: true,
+        },
+        notebooks: payload,
+    };
 }
 
 async function mergeImportedNotebooks(payload) {

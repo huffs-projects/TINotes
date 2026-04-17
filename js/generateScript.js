@@ -1,5 +1,6 @@
 const generateScriptBtn = document.getElementById("generateScriptBtn");
 generateScriptBtn.addEventListener("click", exportScript);
+const download8xpBtn = document.getElementById("download8xpBtn");
 const downloadScriptBtn = document.getElementById("downloadScriptBtn");
 const copyScriptBtn = document.getElementById("copyScriptBtn");
 const defaultScriptFormat = "sourceCoder";
@@ -7,9 +8,43 @@ let script;
 let itemSize = calculateItemSize();
 let startEquationIndex;
 let equationIndex;
+let exportSanitizationReport;
+let hasShownSanitizationWarning = false;
+const maxMenuOptions = 7;
 downloadScriptBtn.addEventListener("click", () => {
+    prepareScriptForExport({ forceWarning: true });
     download("TINOTES.txt", script);
 });
+if (download8xpBtn) {
+    download8xpBtn.addEventListener("click", () => {
+        prepareScriptForExport({ forceWarning: true });
+        const text = script;
+        download8xpBtn.classList.add("btn-disabled");
+        const enable8xpBtn = () => download8xpBtn.classList.remove("btn-disabled");
+        TINotesExport8xp.build8xp("TINOTES", text, calculatorType)
+            .then((bytes) => {
+                TINotesExport8xp.downloadBinary("TINOTES.8xp", bytes);
+                swal({
+                    title: "Saved TINOTES.8xp",
+                    text: "Send the file with TI Connect or your usual link software.",
+                    icon: "success",
+                    buttons: false,
+                    timer: 1400,
+                });
+                enable8xpBtn();
+            })
+            .catch((err) => {
+                swal({
+                    title: "Could not build .8xp",
+                    text: (err && err.message ? err.message : String(err)) +
+                        "\n\nTry Download .txt and compile with SourceCoder or TI Connect.",
+                    icon: "error",
+                    button: "OK",
+                });
+                enable8xpBtn();
+            });
+    });
+}
 copyScriptBtn.addEventListener("click", () => {
     /* Select the text field */
     document.getElementById("viewer").select();
@@ -53,8 +88,7 @@ function calculateEquationVarSize() {
 }
 
 function exportScript() {
-    generateScript();
-    changeScriptFormat(defaultScriptFormat);
+    prepareScriptForExport();
     const popupBody = document.querySelector('#popup div.modal-body');
     let viewer = document.getElementById("viewer")
     if (viewer) {
@@ -77,8 +111,18 @@ function exportScript() {
         });
 
 
-    // process linebreak
+    showSanitizationWarningIfNeeded();
+}
+
+function prepareScriptForExport(options = {}) {
+    const forceWarning = !!options.forceWarning;
+    generateScript();
+    changeScriptFormat(defaultScriptFormat);
+    // Normalize line endings for downloads/tokenizers.
     script = script.replace(/\n/g, "\r\n");
+    if (forceWarning) {
+        hasShownSanitizationWarning = false;
+    }
 }
 
 function changeScriptFormat(scriptFormat) {
@@ -127,6 +171,7 @@ function generateScript() {
     const equationVarSize = calculateEquationVarSize();
     startEquationIndex = itemSize + folderSize + 1;
     equationIndex = startEquationIndex;
+    exportSanitizationReport = createSanitizationReport();
     script = `0->N\n1->W\nLbl S\n`; // initialize variables
     // initiate equation var list
     if (equationVarSize > 0) {
@@ -140,13 +185,15 @@ function generateScriptHelper(position, index) {
     // console.log('TCL: generateScriptHelper -> index', index);
     // console.log('TCL: generateScriptHelper -> position', position);
     let homeMenu = `If N=${index}\nThen\nN->|LA(W)\n`;
-    homeMenu += `Menu("${getEndOfActivePosition(position)}"`;
     let branching = ``;
-    const indexList = [];
+    const menuEntries = [];
     iterateStorage(function (item, itemName, itemType, itemPosition, index) {
         if (itemPosition === position) {
             index++;
-            homeMenu += `,"${getEndOfActivePosition(itemName)}",${index}`;
+            menuEntries.push({
+                text: sanitizeSourceCoderString(getEndOfActivePosition(itemName), `menu item: ${itemName}`),
+                target: index,
+            });
             if (itemType === `file`) {
                 branching += generateFileScript(index, item.content);
             } else if (itemType === `equation`) {
@@ -154,17 +201,38 @@ function generateScriptHelper(position, index) {
             } else {
                 branching += generateScriptHelper(itemName, index);
             }
-            indexList.push(index);
         }
     });
+
+    const sanitizedTitle = sanitizeSourceCoderString(getEndOfActivePosition(position), `menu title: ${position}`);
+    const menuPages = splitMenuEntries(menuEntries, position !== "home");
+    const pageLabels = menuPages.map(() => itemSize++);
+    menuPages.forEach((pageEntries, pageIndex) => {
+        const pageLabel = pageLabels[pageIndex];
+        const hasPrevious = pageIndex > 0;
+        const hasNext = pageIndex < menuPages.length - 1;
+        let pageMenu = `Lbl ${pageLabel}\nMenu("${sanitizedTitle}"`;
+        pageEntries.forEach((entry) => {
+            pageMenu += `,"${entry.text}",${entry.target}`;
+        });
+        if (hasPrevious) {
+            pageMenu += `,"Prev",${pageLabels[pageIndex - 1]}`;
+        }
+        if (hasNext) {
+            pageMenu += `,"More",${pageLabels[pageIndex + 1]}`;
+        }
+        if (position !== "home") {
+            pageMenu += `,"Back",${itemSize}`;
+        }
+        pageMenu += `)\n`;
+        homeMenu += pageMenu;
+    });
+
+    const indexList = menuEntries.map((entry) => entry.target);
     if (position !== "home") { // not at home position
-        homeMenu += `,"Back",${itemSize}`;
-        homeMenu += `)\n`;
         homeMenu += `Lbl ${itemSize}\n`;
         homeMenu += `W-1->W\n|LA(W)->N\nGoto S\n`;
         itemSize++;
-    } else { // at home position
-        homeMenu += `)\n`;
     }
     indexList.forEach(
         (index, len) => {
@@ -185,6 +253,21 @@ function generateScriptHelper(position, index) {
     homeMenu += `W+1->W\nEnd\n`;
     script = `${homeMenu}\n${branching}`;
     return script;
+}
+
+function splitMenuEntries(entries, includeBackOption) {
+    const safeEntries = entries || [];
+    const singlePageCapacity = includeBackOption ? maxMenuOptions - 1 : maxMenuOptions;
+    if (safeEntries.length <= singlePageCapacity) {
+        return [safeEntries];
+    }
+    const pagedCapacity = includeBackOption ? maxMenuOptions - 2 : maxMenuOptions - 1;
+    const pageSize = Math.max(1, pagedCapacity);
+    const pages = [];
+    for (let i = 0; i < safeEntries.length; i += pageSize) {
+        pages.push(safeEntries.slice(i, i + pageSize));
+    }
+    return pages;
 }
 
 function convertEquationToTIFormat(equation){
@@ -229,12 +312,13 @@ function generateEquationScript(index, item) {
     console.log('TCL: generateEquationScript -> varNames', userVarNames);
     let str = `If N=${index}\nThen\n`;
     // display equation and initiate variables
-    str += `Disp "${eq}"\nPause \n${equationIndex - 1}->L\nN->|LA(W)\n`;
+    str += `Disp "${sanitizeSourceCoderString(eq, `equation display: ${index}`)}"\nPause \n${equationIndex - 1}->L\nN->|LA(W)\n`;
     // add menu
-    let menu = `Menu("Solve For"`; // start menu
+    let menu = ``; // paged menus emitted below
     let conversion = ``;
     let prompt = ``;
     let solution = ``;
+    const variableMenuEntries = [];
     for (let label = startIndex; label < endIndex; label++) {
         const userVarName = userVarNames[label - startIndex];
         const userVarDescription = userVarDescriptions[userVarName];
@@ -255,22 +339,40 @@ function generateEquationScript(index, item) {
             prompt += `${tiVarEquation}->${tiVarName}\n`;
         } else { // var is a true variable
             // add menu item (equation variables)
-            if (userVarDescription){
-                menu += `,"${userVarName}-${userVarDescription}",${label}`;
-            } else{
-                menu += `,"${userVarName}",${label}`;
-            }
+            const menuText = userVarDescription
+                ? sanitizeSourceCoderString(`${userVarName}-${userVarDescription}`, `equation var description: ${userVarName}`)
+                : sanitizeSourceCoderString(userVarName, `equation var name: ${userVarName}`);
+            variableMenuEntries.push({ text: menuText, target: label });
             // prompt values for known variables
-            prompt += `If (L!=${label})\nThen\nInput "${userVarName}=",T\n`;
+            prompt += `If (L!=${label})\nThen\nInput "${sanitizeSourceCoderString(userVarName, `equation prompt: ${userVarName}`)}=",T\n`;
             // use T as a temporary variable (input doesn't accept L1(2) syntax)
             prompt += `T->${tiVarName}\nEnd\n`;
             // calculate and display the solution
-            solution += `If L=${label}\nThen\n"${userVarName}="->Str2\n${tiVarEquation}->V\nEnd\n`;
+            solution += `If L=${label}\nThen\n"${sanitizeSourceCoderString(userVarName, `equation solution label: ${userVarName}`)}="->Str2\n${tiVarEquation}->V\nEnd\n`;
         }
         // convert menu item's label to number
         conversion += `Lbl ${startIndex - 1 + endIndex - label}:L+1->L\n`;
     }
-    menu += `)\n`; // end menu
+
+    const menuPages = splitMenuEntries(variableMenuEntries, false);
+    const equationMenuLabels = menuPages.map(() => equationIndex++);
+    menuPages.forEach((pageEntries, pageIndex) => {
+        const pageLabel = equationMenuLabels[pageIndex];
+        const hasPrevious = pageIndex > 0;
+        const hasNext = pageIndex < menuPages.length - 1;
+        let pageMenu = `Lbl ${pageLabel}\nMenu("Solve For"`;
+        pageEntries.forEach((entry) => {
+            pageMenu += `,"${entry.text}",${entry.target}`;
+        });
+        if (hasPrevious) {
+            pageMenu += `,"Prev",${equationMenuLabels[pageIndex - 1]}`;
+        }
+        if (hasNext) {
+            pageMenu += `,"More",${equationMenuLabels[pageIndex + 1]}`;
+        }
+        pageMenu += `)\n`;
+        menu += pageMenu;
+    });
     // convert result from number to string for display
     solution += `{0,.5,1->L1\nVL1->L2\nMed-Med {Y1}\nEqu>String({Y1},Str1\nsub(Str1,1,length(Str1)-3->Str1\n`;
     // clean up unused variables from the routine
@@ -344,7 +446,200 @@ function convertMinusesToNegations(eq) {
 }
 
 function generateFileScript(index, content) {
-    return `If N=${index}\n"${content}"->Str1\n`;
+    return `If N=${index}\n"${sanitizeSourceCoderString(content, `file content: ${index}`)}"->Str1\n`;
+}
+
+function createSanitizationReport() {
+    return {
+        totalReplacements: 0,
+        touchedContexts: new Set(),
+        replacementCounts: {},
+    };
+}
+
+function addSanitizationReplacement(originalChar, replacementText, context) {
+    if (!exportSanitizationReport) {
+        exportSanitizationReport = createSanitizationReport();
+    }
+    exportSanitizationReport.totalReplacements += 1;
+    exportSanitizationReport.touchedContexts.add(context);
+    const replacementKey = `${originalChar}->${replacementText}`;
+    exportSanitizationReport.replacementCounts[replacementKey] = (exportSanitizationReport.replacementCounts[replacementKey] || 0) + 1;
+}
+
+function sanitizeSourceCoderString(input, context = "unknown context") {
+    if (typeof input !== "string" || input.length === 0) {
+        return "";
+    }
+    const directReplacements = {
+        // Common typography → ASCII
+        "“": '"',
+        "”": '"',
+        "„": '"',
+        "‟": '"',
+        "’": "'",
+        "‘": "'",
+        "‚": "'",
+        "‛": "'",
+        "—": "-",
+        "–": "-",
+        "−": "-",
+        "…": "...",
+        "•": "*",
+        "·": "*",
+        "∙": "*",
+        "×": "*",
+        "÷": "/",
+        "≠": "!=",
+        "≤": "<=",
+        "≥": ">=",
+        "≈": "~=",
+        "≃": "~=",
+        "≅": "~=",
+        "∞": "inf",
+        "°": "deg",
+        "º": "deg",
+        "∠": "angle",
+        "√": "sqrt(",
+        // NBSP / spaces
+        "\u00A0": " ",
+
+        // Greek letters → words (lowercase)
+        "α": "alpha",
+        "β": "beta",
+        "γ": "gamma",
+        "δ": "delta",
+        "ε": "epsilon",
+        "ϵ": "epsilon",
+        "ζ": "zeta",
+        "η": "eta",
+        "θ": "theta",
+        "ϑ": "theta",
+        "ι": "iota",
+        "κ": "kappa",
+        "λ": "lambda",
+        "μ": "mu",
+        "ν": "nu",
+        "ξ": "xi",
+        "ο": "omicron",
+        "π": "pi",
+        "ρ": "rho",
+        "ϱ": "rho",
+        "σ": "sigma",
+        "ς": "sigma",
+        "τ": "tau",
+        "υ": "upsilon",
+        "φ": "phi",
+        "ϕ": "phi",
+        "χ": "chi",
+        "ψ": "psi",
+        "ω": "omega",
+
+        // Greek letters → words (uppercase)
+        "Α": "Alpha",
+        "Β": "Beta",
+        "Γ": "Gamma",
+        "Δ": "Delta",
+        "Ε": "Epsilon",
+        "Ζ": "Zeta",
+        "Η": "Eta",
+        "Θ": "Theta",
+        "Ι": "Iota",
+        "Κ": "Kappa",
+        "Λ": "Lambda",
+        "Μ": "Mu",
+        "Ν": "Nu",
+        "Ξ": "Xi",
+        "Ο": "Omicron",
+        "Π": "Pi",
+        "Ρ": "Rho",
+        "Σ": "Sigma",
+        "Τ": "Tau",
+        "Υ": "Upsilon",
+        "Φ": "Phi",
+        "Χ": "Chi",
+        "Ψ": "Psi",
+        "Ω": "Omega",
+
+        // Subscripts / superscripts → ASCII
+        "₀": "0",
+        "₁": "1",
+        "₂": "2",
+        "₃": "3",
+        "₄": "4",
+        "₅": "5",
+        "₆": "6",
+        "₇": "7",
+        "₈": "8",
+        "₉": "9",
+        "⁰": "0",
+        "¹": "1",
+        "²": "2",
+        "³": "3",
+        "⁴": "4",
+        "⁵": "5",
+        "⁶": "6",
+        "⁷": "7",
+        "⁸": "8",
+        "⁹": "9",
+        "⁻": "-",
+
+        // Unicode replacement char should never survive.
+        "�": "",
+    };
+    let sanitized = "";
+    // Decompose diacritics (é → e + ◌́) so we can drop marks instead of '?'
+    const normalizedInput = typeof input.normalize === "function" ? input.normalize("NFKD") : input;
+    for (const char of normalizedInput) {
+        if (directReplacements[char] !== undefined) {
+            const replacement = directReplacements[char];
+            sanitized += replacement;
+            addSanitizationReplacement(char, replacement, context);
+            continue;
+        }
+        // Strip combining marks introduced by NFKD (accents, etc).
+        if (/[\p{M}]/u.test(char)) {
+            addSanitizationReplacement(char, "", context);
+            continue;
+        }
+        // Strip zero-width / BOM characters.
+        if (/[\u200B-\u200D\uFEFF]/u.test(char)) {
+            addSanitizationReplacement(char, "", context);
+            continue;
+        }
+        const code = char.codePointAt(0);
+        if (code >= 32 && code <= 126) {
+            sanitized += char;
+            continue;
+        }
+        sanitized += "?";
+        addSanitizationReplacement(char, "?", context);
+    }
+    return sanitized;
+}
+
+function showSanitizationWarningIfNeeded() {
+    if (!exportSanitizationReport || exportSanitizationReport.totalReplacements === 0) {
+        hasShownSanitizationWarning = false;
+        return;
+    }
+    if (hasShownSanitizationWarning) {
+        return;
+    }
+    const replacementSummary = Object.entries(exportSanitizationReport.replacementCounts)
+        .map(([key, count]) => `${key} (${count})`)
+        .slice(0, 6)
+        .join(", ");
+    const touchedContextCount = exportSanitizationReport.touchedContexts.size;
+    const warningText = `Normalized ${exportSanitizationReport.totalReplacements} unsupported character(s) across ${touchedContextCount} string section(s). Replacements: ${replacementSummary}`;
+    console.warn(`[TINotes Export] ${warningText}`);
+    swal({
+        title: "Export normalized text",
+        text: warningText,
+        icon: "warning",
+        button: "OK",
+    });
+    hasShownSanitizationWarning = true;
 }
 
 // Source: https://ourcodeworld.com/articles/read/189/how-to-create-a-file-and-generate-a-download-with-javascript-in-the-browser-without-a-server

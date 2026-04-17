@@ -43,7 +43,7 @@ fallback.load({
             'Algebrite': [
                 '//cdn.jsdelivr.net/npm/algebrite@1.2.0/dist/algebrite.bundle-for-browser.min.js',
             ],
-            'localForge': [
+            'localforage': [
                 '//cdn.jsdelivr.net/npm/localforage@1.7.3/dist/localforage.min.js',
             ],
         }); 
@@ -51,7 +51,7 @@ fallback.load({
             const scripts = [
                 "dist/js/utils.js",
                 "dist/js/script.js", "dist/js/equations.js", "dist/js/contextMenu.js",
-                 "TI-BASIC/baseScript.txt", "dist/js/generateScript.js", "dist/js/popup.js", 
+                 "TI-BASIC/baseScript.txt", "dist/js/export8xp.js", "dist/js/generateScript.js", "dist/js/popup.js", 
                  "dist/js/introSteps.js", "dist/js/notebookMenu.js", "dist/js/transferData.js",
             ];
             dynamicallyLoadScripts(scripts);
