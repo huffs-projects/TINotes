@@ -8,8 +8,6 @@ const metaInfo = notebookStorage.createInstance({
 });
 metaInfo.setDriver([notebookStorage.WEBSQL, notebookStorage.INDEXEDDB]);
 
-notebookStorage.iterate((value, key) => {console.log(key, value)})
-
 const toggleBtn = document.querySelector('#hamburger-icon.toggle-btn');
 const sidebar = document.getElementById("sidebar");
 const notebookMenu = sidebar.querySelector("ul");
@@ -23,16 +21,18 @@ let notebookNameList = [];
 let selectedNotebookName; // store the selected notebook name
 const defaultNotebookName = "notebook1";
 
-loadMetaInfo().then(() => {
-    const notebookSize = notebookNameList.length;
-	console.log('TCL: notebookSize', notebookSize);
-    if (notebookSize > 0) {
-        // load notebooks in storage
-        loadNotebookMenu();
-    } else {
-        // add default notebook
-        addDefaultNotebook();
-    }
+sanitizeNotebookStorage().then(() => {
+    loadMetaInfo().then(() => {
+        const notebookSize = notebookNameList.length;
+        console.log('TCL: notebookSize', notebookSize);
+        if (notebookSize > 0) {
+            // load notebooks in storage
+            loadNotebookMenu();
+        } else {
+            // add default notebook
+            addDefaultNotebook();
+        }
+    });
 });
 
 // periodically store selected notebook
@@ -220,8 +220,15 @@ function loadNotebookMenu() {
         console.log('TCL: loadNotebookMenu -> notebookName', notebookName);
         // notebookNameList.push(notebookName);
         displayNotebookLabel(notebookName);
-    })
-    setSelectedNotebook(selectedNotebookName, {
+    });
+    const fallbackNotebookName =
+        typeof selectedNotebookName === "string" && notebookNameList.includes(selectedNotebookName)
+            ? selectedNotebookName
+            : notebookNameList[0];
+    if (!fallbackNotebookName) {
+        return;
+    }
+    setSelectedNotebook(fallbackNotebookName, {
         storePrevious: false,
         storeSelected: false
     });
@@ -329,7 +336,21 @@ function removeNotebookFromStorage(notebookName) {
 }
 
 function getNotebookFromStorage(notebookName) {
-    return notebookStorage.getItem(notebookName);
+    if (typeof notebookName !== "string" || notebookName.length === 0) {
+        return Promise.resolve({});
+    }
+    return notebookStorage
+        .getItem(notebookName)
+        .then((notebook) => {
+            if (notebook && typeof notebook === "object") {
+                return notebook;
+            }
+            return {};
+        })
+        .catch((error) => {
+            console.warn(`Unable to load notebook "${notebookName}".`, error);
+            return {};
+        });
 }
 
 function setNotebookInStorage(notebookName, notebook) {
@@ -434,4 +455,73 @@ function createLocalStorageStore(prefix) {
     }
 
     return createScopedStore(prefix);
+}
+
+function sanitizeNotebookStorage() {
+    const tasks = [
+        sanitizeNotebookStoreEntries(),
+        sanitizeMetaInfoEntries(),
+        sanitizeCurrentNotebookCacheEntries(),
+    ];
+    return Promise.all(tasks).catch((error) => {
+        console.warn("Failed to sanitize notebook storage.", error);
+    });
+}
+
+function sanitizeNotebookStoreEntries() {
+    const badNotebookKeys = [];
+    return notebookStorage
+        .iterate((value, key) => {
+            if (!value || typeof value !== "object" || Array.isArray(value)) {
+                badNotebookKeys.push(key);
+            }
+        })
+        .then(() => Promise.all(badNotebookKeys.map((key) => notebookStorage.removeItem(key))))
+        .catch((error) => {
+            console.warn("Failed to sanitize notebook entries.", error);
+        });
+}
+
+function sanitizeMetaInfoEntries() {
+    return Promise.all([
+        getMetaInfo("notebookNameList").then((value) => {
+            if (value === null || value === undefined || Array.isArray(value)) {
+                return;
+            }
+            return setMetaInfo("notebookNameList", []);
+        }),
+        getMetaInfo("selectedNotebookName").then((value) => {
+            if (value === null || value === undefined || typeof value === "string") {
+                return;
+            }
+            return setMetaInfo("selectedNotebookName", "");
+        }),
+    ]).catch((error) => {
+        console.warn("Failed to sanitize notebook meta info.", error);
+    });
+}
+
+function sanitizeCurrentNotebookCacheEntries() {
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || key.startsWith(notebookStoragePrefix)) {
+            continue;
+        }
+        const rawValue = localStorage.getItem(key);
+        if (rawValue === null || rawValue === undefined || rawValue === "undefined") {
+            keysToRemove.push(key);
+            continue;
+        }
+        try {
+            const parsedValue = JSON.parse(rawValue);
+            if (!parsedValue || typeof parsedValue !== "object" || typeof parsedValue.type !== "string") {
+                keysToRemove.push(key);
+            }
+        } catch (error) {
+            keysToRemove.push(key);
+        }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+    return Promise.resolve();
 }
