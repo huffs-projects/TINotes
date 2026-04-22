@@ -213,7 +213,7 @@ function generateScriptHelper(position, index) {
         if (itemPosition === position) {
             index++;
             menuEntries.push({
-                text: sanitizeSourceCoderString(getEndOfActivePosition(itemName), `menu item: ${itemName}`),
+                text: sanitizeSourceCoderString(getEndOfActivePosition(itemName, position), `menu item: ${itemName}`),
                 target: index,
             });
             if (itemType === `file`) {
@@ -226,7 +226,7 @@ function generateScriptHelper(position, index) {
         }
     });
 
-    const sanitizedTitle = sanitizeSourceCoderString(getEndOfActivePosition(position), `menu title: ${position}`);
+    const sanitizedTitle = sanitizeSourceCoderString(getEndOfActivePosition(position, "home"), `menu title: ${position}`);
     const menuPages = splitMenuEntries(menuEntries, position !== "home");
     const pageLabels = menuPages.map(() => itemSize++);
     menuPages.forEach((pageEntries, pageIndex) => {

@@ -391,8 +391,8 @@ function displayTotalSize() {
 // e.g. itemName = "home/folder1/file1"
 // returns "file1"
 // item must be at the current position!!!
-function getEndOfActivePosition(itemName) {
-    let endPosition = itemName.substring(position.length + 1); // when item is NOT a folder
+function getEndOfActivePosition(itemName, basePosition = position) {
+    let endPosition = itemName.substring(basePosition.length + 1); // when item is NOT a folder
     if (endPosition === "") { // when item is a folder and itemName === position
         return itemName.substring(itemName.lastIndexOf("/") + 1);
     } else {
