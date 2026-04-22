@@ -98,5 +98,21 @@ function deleteSubstring(str, index, deleteLength = 0) {
 // but not containing functions
 // Source: https://stackoverflow.com/a/10869248/6798201
 function clone(obj){
-    return JSON.parse(JSON.stringify(obj));
+    if (obj === undefined) {
+        return undefined;
+    }
+    let serialized;
+    try {
+        serialized = JSON.stringify(obj);
+    } catch (error) {
+        return undefined;
+    }
+    if (serialized === undefined || serialized === "undefined") {
+        return undefined;
+    }
+    try {
+        return JSON.parse(serialized);
+    } catch (error) {
+        return undefined;
+    }
 }

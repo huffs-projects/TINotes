@@ -30,6 +30,7 @@ function loadGenerateScriptContext() {
         convertSymbolsToWords: (value) => value,
         convertWordsToSymbols: (value) => value,
         swal: noop,
+        TINotesExport8xp: { loadTivars: () => Promise.resolve() },
         console,
         RegExp,
     };

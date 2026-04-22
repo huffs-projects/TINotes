@@ -10,6 +10,8 @@ let startEquationIndex;
 let equationIndex;
 let exportSanitizationReport;
 let hasShownSanitizationWarning = false;
+let isBuilding8xp = false;
+let hasPreloaded8xpTokenizer = false;
 const maxMenuOptions = 7;
 downloadScriptBtn.addEventListener("click", () => {
     prepareScriptForExport({ forceWarning: true });
@@ -17,10 +19,17 @@ downloadScriptBtn.addEventListener("click", () => {
 });
 if (download8xpBtn) {
     download8xpBtn.addEventListener("click", () => {
+        if (isBuilding8xp) {
+            return;
+        }
         prepareScriptForExport({ forceWarning: true });
         const text = script;
+        isBuilding8xp = true;
         download8xpBtn.classList.add("btn-disabled");
-        const enable8xpBtn = () => download8xpBtn.classList.remove("btn-disabled");
+        const enable8xpBtn = () => {
+            isBuilding8xp = false;
+            download8xpBtn.classList.remove("btn-disabled");
+        };
         TINotesExport8xp.build8xp("TINOTES", text, calculatorType)
             .then((bytes) => {
                 TINotesExport8xp.downloadBinary("TINOTES.8xp", bytes);
@@ -43,6 +52,19 @@ if (download8xpBtn) {
                 });
                 enable8xpBtn();
             });
+    });
+}
+
+if (generateScriptBtn && TINotesExport8xp && typeof TINotesExport8xp.loadTivars === "function") {
+    generateScriptBtn.addEventListener("click", () => {
+        if (hasPreloaded8xpTokenizer) {
+            return;
+        }
+        hasPreloaded8xpTokenizer = true;
+        TINotesExport8xp.loadTivars().catch(() => {
+            // Keep UI responsive; click-path export will show a user-facing error if this still fails.
+            hasPreloaded8xpTokenizer = false;
+        });
     });
 }
 copyScriptBtn.addEventListener("click", () => {
