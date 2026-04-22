@@ -15,6 +15,20 @@
         return new URL("tivars_test.js", new URL(normalized, document.baseURI)).href;
     }
 
+    function tivarsScriptCandidates() {
+        var urls = [tivarsScriptUrl()];
+        var fallbackUrls = [
+            "https://cdn.jsdelivr.net/gh/huffs-projects/TINotes@main/lib/tivars/tivars_test.js",
+            "https://cdn.jsdelivr.net/gh/AlienKevin/TINotes@master/lib/tivars/tivars_test.js",
+        ];
+        for (var i = 0; i < fallbackUrls.length; i++) {
+            if (urls.indexOf(fallbackUrls[i]) === -1) {
+                urls.push(fallbackUrls[i]);
+            }
+        }
+        return urls;
+    }
+
     function isTivarsReady(lib) {
         return !!(
             lib &&
@@ -68,27 +82,46 @@
             return loadPromise;
         }
         loadPromise = new Promise(function (resolve, reject) {
-            var script = document.createElement("script");
-            script.src = tivarsScriptUrl();
-            script.async = true;
-            script.onload = function () {
-                if (!global.Module || !global.Module.TIVarFile) {
+            var candidates = tivarsScriptCandidates();
+            var attempted = [];
+
+            function tryLoadAt(index) {
+                if (index >= candidates.length) {
                     loadPromise = null;
-                    reject(new Error("TIVars library did not initialize (TIVarFile missing)."));
+                    reject(
+                        new Error(
+                            "Failed to load tokenizer from any source: " + attempted.join(", ")
+                        )
+                    );
                     return;
                 }
-                waitForTivarsReady(global.Module)
-                    .then(resolve)
-                    .catch(function (err) {
+
+                var src = candidates[index];
+                attempted.push(src);
+                var script = document.createElement("script");
+                script.src = src;
+                script.async = true;
+                script.onload = function () {
+                    if (!global.Module || !global.Module.TIVarFile) {
                         loadPromise = null;
-                        reject(err);
-                    });
-            };
-            script.onerror = function () {
-                loadPromise = null;
-                reject(new Error("Failed to load tokenizer from " + script.src));
-            };
-            document.head.appendChild(script);
+                        reject(new Error("TIVars library did not initialize (TIVarFile missing)."));
+                        return;
+                    }
+                    waitForTivarsReady(global.Module)
+                        .then(resolve)
+                        .catch(function (err) {
+                            loadPromise = null;
+                            reject(err);
+                        });
+                };
+                script.onerror = function () {
+                    script.remove();
+                    tryLoadAt(index + 1);
+                };
+                document.head.appendChild(script);
+            }
+
+            tryLoadAt(0);
         });
         return loadPromise;
     }
