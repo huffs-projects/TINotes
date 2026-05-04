@@ -169,7 +169,10 @@ async function mergeImportedNotebooks(payload) {
             notebookNamesRef.push(destinationNotebookName);
             existingNotebookNames.add(destinationNotebookName);
             if (typeof displayNotebookLabel === "function" && typeof document !== "undefined") {
-                const existingLabel = document.querySelector(`#sidebar li[data-name="${destinationNotebookName}"]`);
+                const existingLabel =
+                    typeof getNotebookLabelByName === "function"
+                        ? getNotebookLabelByName(destinationNotebookName)
+                        : document.querySelector(`#sidebar li[data-name="${destinationNotebookName}"]`);
                 if (!existingLabel) {
                     displayNotebookLabel(destinationNotebookName);
                 }
@@ -215,7 +218,14 @@ function mergeNotebookItems(existingNotebook, importedNotebook) {
         if (clonedItem.link && importedNameMap[clonedItem.link]) {
             clonedItem.link = importedNameMap[clonedItem.link];
         }
-        resultNotebook[renamedItemName] = clonedItem;
+        let toStore = clonedItem;
+        if (typeof normalizeNotebookItemForLoad === "function") {
+            const normalized = normalizeNotebookItemForLoad(renamedItemName, clonedItem);
+            if (normalized) {
+                toStore = normalized;
+            }
+        }
+        resultNotebook[renamedItemName] = toStore;
         importedItemCount++;
     });
 

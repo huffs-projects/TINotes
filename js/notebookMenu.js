@@ -41,7 +41,6 @@ sanitizeNotebookStorage().then(() => {
 setTimeout(function periodicallyStoreNotebook() {
     storeSelectedNotebook().then(
         () => {
-            console.log("storing selected notebook...");
             setTimeout(periodicallyStoreNotebook, 1000);
         }
     );
@@ -69,10 +68,12 @@ window.addEventListener("beforeunload", (e) => {
 
 function storeMetaInfo() {
 	// console.log('TCL: storeMetaInfo -> selectedNotebookName', selectedNotebookName);
+    const safeSelectedNotebookName =
+        typeof selectedNotebookName === "string" ? selectedNotebookName : "";
     return metaInfo.clear().then(() => {
         return Promise.all([
             setMetaInfo("notebookNameList", notebookNameList),
-            setMetaInfo("selectedNotebookName", selectedNotebookName)
+            setMetaInfo("selectedNotebookName", safeSelectedNotebookName)
         ]);
     });
 }
@@ -106,6 +107,9 @@ function getMetaInfo(key) {
 
 function storeSelectedNotebook() {
     if (notebookLoadDepth > 0) {
+        return Promise.resolve();
+    }
+    if (typeof selectedNotebookName !== "string" || selectedNotebookName.length === 0) {
         return Promise.resolve();
     }
     const currentNotebook = getCurrentNotebook();
@@ -157,9 +161,8 @@ function setSelectedNotebook(notebookName, opts) {
     const storeSelected = mergedOpts.storeSelected;
 
     // delete styling of old selected notebook
-    const oldSelectedNotebook = notebookMenu.querySelector(`li[data-name="${selectedNotebookName}"]`);
+    const oldSelectedNotebook = getNotebookLabelByName(selectedNotebookName);
     if (oldSelectedNotebook) {
-        console.log('TCL: setSelectedNotebook -> oldSelectedNotebook', oldSelectedNotebook);
         oldSelectedNotebook.classList.remove("selected");
     }
 
@@ -178,10 +181,10 @@ function setSelectedNotebook(notebookName, opts) {
     function switchToNewNotebook() {
         // switch to newly selected notebook
         selectedNotebookName = notebookName;
-        let notebookLabel = notebookMenu.querySelector(`li[data-name="${notebookName}"]`);
+        let notebookLabel = getNotebookLabelByName(notebookName);
         if (!notebookLabel) {
             displayNotebookLabel(notebookName);
-            notebookLabel = notebookMenu.querySelector(`li[data-name="${notebookName}"]`);
+            notebookLabel = getNotebookLabelByName(notebookName);
         }
 		// console.log('TCL: switchToNewNotebook -> notebookLabel', notebookLabel);
         if (notebookLabel) {
@@ -214,8 +217,18 @@ function loadNotebook(notebookName) {
             if (notebook instanceof Object) {
                 Object.keys(notebook).forEach(itemName => {
                     const item = notebook[itemName];
-                    setItemInStorage(itemName, item);
+                    const normalized =
+                        typeof normalizeNotebookItemForLoad === "function"
+                            ? normalizeNotebookItemForLoad(itemName, item)
+                            : item;
+                    if (normalized) {
+                        setItemInStorage(itemName, normalized);
+                    }
                 });
+            }
+            if (typeof setPosition === "function") {
+                setPosition(homePosition);
+            } else {
                 updateAtPosition(homePosition);
             }
         })
@@ -296,6 +309,20 @@ function displayNotebookLabel(notebookName, labelPosition) {
     }
 }
 
+function getNotebookLabelByName(notebookName) {
+    if (typeof notebookName !== "string" || notebookName.length === 0) {
+        return null;
+    }
+    const notebookLabels = notebookMenu.querySelectorAll("li.notebook");
+    for (let i = 0; i < notebookLabels.length; i++) {
+        const label = notebookLabels[i];
+        if (label.getAttribute("data-name") === notebookName) {
+            return label;
+        }
+    }
+    return null;
+}
+
 function renameNotebookInStorage(oldNotebookName, newNotebookName) {
 	// console.log('TCL: renameNotebookInStorage -> renameNotebookInStorage');
     getNotebookFromStorage(oldNotebookName)
@@ -364,6 +391,9 @@ function getNotebookFromStorage(notebookName) {
 }
 
 function setNotebookInStorage(notebookName, notebook) {
+    if (typeof notebookName !== "string" || notebookName.length === 0) {
+        return Promise.resolve();
+    }
     return notebookStorage.setItem(notebookName, notebook).catch(err => {
         console.log(err);
     });
@@ -482,7 +512,15 @@ function sanitizeNotebookStoreEntries() {
     const badNotebookKeys = [];
     return notebookStorage
         .iterate((value, key) => {
-            if (!value || typeof value !== "object" || Array.isArray(value)) {
+            if (
+                typeof key !== "string" ||
+                key.length === 0 ||
+                key === "undefined" ||
+                key === "null" ||
+                !value ||
+                typeof value !== "object" ||
+                Array.isArray(value)
+            ) {
                 badNotebookKeys.push(key);
             }
         })
@@ -495,10 +533,25 @@ function sanitizeNotebookStoreEntries() {
 function sanitizeMetaInfoEntries() {
     return Promise.all([
         getMetaInfo("notebookNameList").then((value) => {
-            if (value === null || value === undefined || Array.isArray(value)) {
+            if (value === null || value === undefined) {
                 return;
             }
-            return setMetaInfo("notebookNameList", []);
+            if (!Array.isArray(value)) {
+                return setMetaInfo("notebookNameList", []);
+            }
+            const sanitizedNameList = Array.from(
+                new Set(
+                    value.filter((name) =>
+                        typeof name === "string" &&
+                        name.length > 0 &&
+                        name !== "undefined" &&
+                        name !== "null"
+                    )
+                )
+            );
+            if (sanitizedNameList.length !== value.length) {
+                return setMetaInfo("notebookNameList", sanitizedNameList);
+            }
         }),
         getMetaInfo("selectedNotebookName").then((value) => {
             if (value === null || value === undefined || typeof value === "string") {

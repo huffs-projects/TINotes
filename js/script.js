@@ -14,6 +14,35 @@ const navigationBar = document.getElementById("navigationBar");
 const homePosition = "home";
 const notebookStorageKeyPrefix = "tinotes:notebook:";
 let position = homePosition; // default root location for the file system
+
+function parentPathFromItemKey(itemName) {
+    if (typeof itemName !== "string" || itemName.length === 0) {
+        return homePosition;
+    }
+    const lastSlash = itemName.lastIndexOf("/");
+    if (lastSlash <= 0) {
+        return homePosition;
+    }
+    return itemName.slice(0, lastSlash);
+}
+
+/** Fix items from JSON / IndexedDB so iterateStorage + updateAtPosition always match. */
+function normalizeNotebookItemForLoad(itemName, item) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+    }
+    const normalized = { ...item };
+    if (typeof normalized.type !== "string") {
+        if (normalized.type == null) {
+            return null;
+        }
+        normalized.type = String(normalized.type);
+    }
+    if (typeof normalized.position !== "string" || normalized.position.length === 0) {
+        normalized.position = parentPathFromItemKey(itemName);
+    }
+    return normalized;
+}
 const itemNameList = [];
 // valid types of note items
 const types = ["file", "folder", "equation", "notebook"];
