@@ -24,6 +24,29 @@ function loadTransferDataContext() {
     return context;
 }
 
+test("normalizeImportPayloadText strips leading BOM before JSON.parse", () => {
+    const context = loadTransferDataContext();
+    assert.doesNotThrow(() => {
+        vm.runInContext(
+            `const raw = '\\uFEFF{"version":1,"notebooks":{}}';
+             const trimmed = normalizeImportPayloadText(raw);
+             const parsed = JSON.parse(trimmed);
+             if (parsed.version !== 1) throw new Error("parse failed");`,
+            context
+        );
+    });
+});
+
+test("normalizeImportPayloadText rejects empty payloads", () => {
+    const context = loadTransferDataContext();
+    assert.throws(
+        () => {
+            vm.runInContext(`normalizeImportPayloadText("");`, context);
+        },
+        /Import file is empty/
+    );
+});
+
 test("legacy payload format imports without version wrapper", () => {
     const context = loadTransferDataContext();
     assert.equal(typeof context.normalizeImportPayload, "function");

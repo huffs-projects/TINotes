@@ -71,7 +71,7 @@ async function importNotebookJson(event) {
         if (!file) {
             return;
         }
-        const text = await readFileText(file);
+        const text = normalizeImportPayloadText(await readFileText(file));
         const parsed = JSON.parse(text);
         const normalizedPayload = normalizeImportPayload(parsed);
         validateImportPayload(normalizedPayload);
@@ -265,6 +265,22 @@ function getUniqueItemName(itemName, notebook) {
         candidateName = parentPath ? `${parentPath}/${candidateShortName}` : candidateShortName;
     }
     return candidateName;
+}
+
+/** Strip BOM (common after Windows / editor saves) so JSON.parse does not fail at column 1. */
+function normalizeImportPayloadText(text) {
+    if (typeof text !== "string" || text.length === 0) {
+        throw new Error("Import file is empty.");
+    }
+    let s = text;
+    while (s.length > 0 && s.charCodeAt(0) === 0xfeff) {
+        s = s.slice(1);
+    }
+    s = s.trim();
+    if (s.length === 0) {
+        throw new Error("Import file is empty.");
+    }
+    return s;
 }
 
 function readFileText(file) {
