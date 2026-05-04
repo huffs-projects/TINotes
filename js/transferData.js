@@ -337,16 +337,13 @@ function getCurrentNotebookSnapshot() {
     for (let i = 0; i < localStorage.length; i++) {
         const itemName = localStorage.key(i);
         const rawValue = localStorage.getItem(itemName);
-        if (!rawValue) {
+        if (!rawValue || rawValue === "undefined") {
             continue;
         }
-        try {
-            const item = JSON.parse(rawValue);
-            if (item && typeof item === "object" && typeof item.type === "string") {
-                snapshot[itemName] = item;
-            }
-        } catch (error) {
-            // Ignore unrelated localStorage keys that are not JSON note items.
+        const item =
+            typeof safeJsonParse === "function" ? safeJsonParse(rawValue) : null;
+        if (item && typeof item === "object" && typeof item.type === "string") {
+            snapshot[itemName] = item;
         }
     }
     return snapshot;

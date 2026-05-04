@@ -23,27 +23,44 @@ let selectedNotebookName; // store the selected notebook name
 let notebookLoadDepth = 0;
 const defaultNotebookName = "notebook1";
 
-sanitizeNotebookStorage().then(() => {
-    loadMetaInfo().then(() => {
-        const notebookSize = notebookNameList.length;
-        console.log('TCL: notebookSize', notebookSize);
-        if (notebookSize > 0) {
-            // load notebooks in storage
-            loadNotebookMenu();
-        } else {
-            // add default notebook
-            addDefaultNotebook();
-        }
+function parseStorageJson(rawValue) {
+    if (rawValue == null) {
+        return null;
+    }
+    const str = typeof rawValue === "string" ? rawValue.trim() : String(rawValue);
+    if (str === "" || str === "undefined") {
+        return null;
+    }
+    try {
+        return JSON.parse(str);
+    } catch (error) {
+        return null;
+    }
+}
+
+sanitizeNotebookStorage()
+    .then(() =>
+        loadMetaInfo().then(() => {
+            const notebookSize = notebookNameList.length;
+            console.log('TCL: notebookSize', notebookSize);
+            if (notebookSize > 0) {
+                loadNotebookMenu();
+            } else {
+                addDefaultNotebook();
+            }
+        })
+    )
+    .catch((error) => {
+        console.warn("Notebook bootstrap failed.", error);
     });
-});
 
 // periodically store selected notebook
 setTimeout(function periodicallyStoreNotebook() {
-    storeSelectedNotebook().then(
-        () => {
+    storeSelectedNotebook()
+        .catch(() => {})
+        .finally(() => {
             setTimeout(periodicallyStoreNotebook, 1000);
-        }
-    );
+        });
 }, 1000);
 
 // select notebook on click
@@ -70,12 +87,17 @@ function storeMetaInfo() {
 	// console.log('TCL: storeMetaInfo -> selectedNotebookName', selectedNotebookName);
     const safeSelectedNotebookName =
         typeof selectedNotebookName === "string" ? selectedNotebookName : "";
-    return metaInfo.clear().then(() => {
-        return Promise.all([
-            setMetaInfo("notebookNameList", notebookNameList),
-            setMetaInfo("selectedNotebookName", safeSelectedNotebookName)
-        ]);
-    });
+    return metaInfo
+        .clear()
+        .then(() => {
+            return Promise.all([
+                setMetaInfo("notebookNameList", notebookNameList),
+                setMetaInfo("selectedNotebookName", safeSelectedNotebookName)
+            ]);
+        })
+        .catch((error) => {
+            console.warn("storeMetaInfo failed.", error);
+        });
 }
 
 function loadMetaInfo() {
@@ -171,7 +193,7 @@ function setSelectedNotebook(notebookName, opts) {
         selectedNotebookName = notebookName;
     }
     if (storeSelected) {
-        storeSelectedNotebook().then(() => {
+        storeSelectedNotebook().finally(() => {
             switchToNewNotebook();
         });
     } else {
@@ -379,7 +401,10 @@ function getNotebookFromStorage(notebookName) {
     return notebookStorage
         .getItem(notebookName)
         .then((notebook) => {
-            if (notebook && typeof notebook === "object") {
+            if (typeof notebook === "string") {
+                notebook = parseStorageJson(notebook);
+            }
+            if (notebook && typeof notebook === "object" && !Array.isArray(notebook)) {
                 return notebook;
             }
             return {};
@@ -422,16 +447,16 @@ function clearCurrentNotebookCache() {
             continue;
         }
         const rawValue = localStorage.getItem(key);
+        if (rawValue === "undefined") {
+            keysToRemove.push(key);
+            continue;
+        }
         if (!rawValue) {
             continue;
         }
-        try {
-            const parsedValue = JSON.parse(rawValue);
-            if (parsedValue && typeof parsedValue === "object" && typeof parsedValue.type === "string") {
-                keysToRemove.push(key);
-            }
-        } catch (error) {
-            // Ignore non-JSON localStorage keys that do not represent notebook cache entries.
+        const parsedValue = parseStorageJson(rawValue);
+        if (parsedValue && typeof parsedValue === "object" && typeof parsedValue.type === "string") {
+            keysToRemove.push(key);
         }
     }
     keysToRemove.forEach((key) => localStorage.removeItem(key));
@@ -442,12 +467,14 @@ function createLocalStorageStore(prefix) {
         if (rawValue === null) {
             return null;
         }
-        try {
-            return JSON.parse(rawValue);
-        } catch (error) {
-            console.warn(`Unable to parse stored value for ${key}.`, error);
-            return null;
+        const parsed = parseStorageJson(rawValue);
+        if (parsed === null && rawValue !== null) {
+            const s = String(rawValue).trim();
+            if (s !== "" && s !== "undefined") {
+                console.warn(`Unable to parse stored value for ${key}.`);
+            }
         }
+        return parsed;
     }
 
     function createScopedStore(scopePrefix) {
@@ -576,12 +603,8 @@ function sanitizeCurrentNotebookCacheEntries() {
             keysToRemove.push(key);
             continue;
         }
-        try {
-            const parsedValue = JSON.parse(rawValue);
-            if (!parsedValue || typeof parsedValue !== "object" || typeof parsedValue.type !== "string") {
-                keysToRemove.push(key);
-            }
-        } catch (error) {
+        const parsedValue = parseStorageJson(rawValue);
+        if (!parsedValue || typeof parsedValue !== "object" || typeof parsedValue.type !== "string") {
             keysToRemove.push(key);
         }
     }

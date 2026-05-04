@@ -94,6 +94,22 @@ function deleteSubstring(str, index, deleteLength = 0) {
     return insertSubstring(str, index, "", deleteLength);
 }
 
+/** Parse localStorage / serialized strings; never throws. Rejects literal `"undefined"` and other junk. */
+function safeJsonParse(rawValue) {
+    if (rawValue == null) {
+        return null;
+    }
+    const str = typeof rawValue === "string" ? rawValue.trim() : String(rawValue);
+    if (str === "" || str === "undefined") {
+        return null;
+    }
+    try {
+        return JSON.parse(str);
+    } catch (error) {
+        return null;
+    }
+}
+
 // Clone an object containing objects, arrays, strings, booleans and numbers
 // but not containing functions
 // Source: https://stackoverflow.com/a/10869248/6798201

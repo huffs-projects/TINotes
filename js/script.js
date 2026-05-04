@@ -772,15 +772,18 @@ function removeItemFromStorage(itemName) {
 
 function getItemFromStorage(itemName) {
     const rawValue = localStorage.getItem(itemName);
-    if (!rawValue) {
+    if (rawValue == null || rawValue === "") {
         return null;
     }
-    try {
-        return JSON.parse(rawValue);
-    } catch (error) {
-        console.warn(`Skipping invalid storage entry: ${itemName}`, error);
+    if (rawValue === "undefined") {
+        try {
+            localStorage.removeItem(itemName);
+        } catch (error) {
+            // ignore quota / access errors
+        }
         return null;
     }
+    return typeof safeJsonParse === "function" ? safeJsonParse(rawValue) : null;
 }
 
 function setItemInStorage(itemName, item) {
