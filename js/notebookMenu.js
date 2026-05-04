@@ -38,6 +38,14 @@ function parseStorageJson(rawValue) {
     }
 }
 
+function isCurrentNotebookItemCacheKey(key) {
+    return (
+        typeof key === "string" &&
+        key.indexOf("home/") === 0 &&
+        !key.startsWith(notebookStoragePrefix)
+    );
+}
+
 sanitizeNotebookStorage()
     .then(() =>
         loadMetaInfo().then(() => {
@@ -446,6 +454,9 @@ function clearCurrentNotebookCache() {
         if (!key || key.startsWith(notebookStoragePrefix)) {
             continue;
         }
+        if (!isCurrentNotebookItemCacheKey(key)) {
+            continue;
+        }
         const rawValue = localStorage.getItem(key);
         if (rawValue === "undefined") {
             keysToRemove.push(key);
@@ -595,7 +606,10 @@ function sanitizeCurrentNotebookCacheEntries() {
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (!key || key.startsWith(notebookStoragePrefix)) {
+        if (!key || key.startsWith(notebookStoragePrefix) || key.startsWith("localforage")) {
+            continue;
+        }
+        if (!isCurrentNotebookItemCacheKey(key)) {
             continue;
         }
         const rawValue = localStorage.getItem(key);

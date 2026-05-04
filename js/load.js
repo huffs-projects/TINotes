@@ -65,6 +65,9 @@ fallback.load({
             urls.slice(1).forEach(url => {
                 promise = promise.then(() => dynamicallyLoadScript(url));
             });
+            promise.catch(function (err) {
+                console.warn("Stopped loading app scripts.", err);
+            });
         }
 
         function dynamicallyLoadScript(url) {
