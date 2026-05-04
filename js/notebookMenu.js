@@ -19,6 +19,8 @@ toggleBtn.addEventListener("click", (event) => {
 });
 let notebookNameList = [];
 let selectedNotebookName; // store the selected notebook name
+/** Refcount while clearing local cache and reloading from storage; skips periodic autosave so `{}` cannot overwrite the persisted notebook mid-load */
+let notebookLoadDepth = 0;
 const defaultNotebookName = "notebook1";
 
 sanitizeNotebookStorage().then(() => {
@@ -103,6 +105,9 @@ function getMetaInfo(key) {
 }
 
 function storeSelectedNotebook() {
+    if (notebookLoadDepth > 0) {
+        return Promise.resolve();
+    }
     const currentNotebook = getCurrentNotebook();
     // console.log('TCL: storeSelectedNotebook -> currentNotebook', selectedNotebookName);
     return setNotebookInStorage(selectedNotebookName, currentNotebook);
@@ -202,16 +207,21 @@ function addDefaultNotebook() {
 }
 
 function loadNotebook(notebookName) {
+    notebookLoadDepth++;
     clearSelectedNotebook();
-    getNotebookFromStorage(notebookName).then((notebook) => {
-        if (notebook instanceof Object) {
-            Object.keys(notebook).forEach(itemName => {
-                const item = notebook[itemName];
-                setItemInStorage(itemName, item);
-            });
-            updateAtPosition(homePosition);
-        }
-    });
+    getNotebookFromStorage(notebookName)
+        .then((notebook) => {
+            if (notebook instanceof Object) {
+                Object.keys(notebook).forEach(itemName => {
+                    const item = notebook[itemName];
+                    setItemInStorage(itemName, item);
+                });
+                updateAtPosition(homePosition);
+            }
+        })
+        .finally(() => {
+            notebookLoadDepth = Math.max(0, notebookLoadDepth - 1);
+        });
 }
 
 function loadNotebookMenu() {
