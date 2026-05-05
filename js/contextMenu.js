@@ -121,6 +121,11 @@
                                     pinToHome(itemLabel);
                                 };
                                 break;
+                            case "exportFolderTi":
+                                el.onclick = () => {
+                                    exportFolderAsTiProgram(itemLabel);
+                                };
+                                break;
                         }
                     }
                 )

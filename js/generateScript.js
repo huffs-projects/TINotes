@@ -1,5 +1,8 @@
 const generateScriptBtn = document.getElementById("generateScriptBtn");
-generateScriptBtn.addEventListener("click", exportScript);
+generateScriptBtn.addEventListener("click", () => {
+    prepareScriptForExport({ exportRoot: homePosition });
+    openExportScriptModal();
+});
 const download8xpBtn = document.getElementById("download8xpBtn");
 const downloadScriptBtn = document.getElementById("downloadScriptBtn");
 const copyScriptBtn = document.getElementById("copyScriptBtn");
@@ -13,16 +16,42 @@ let hasShownSanitizationWarning = false;
 let isBuilding8xp = false;
 let hasPreloaded8xpTokenizer = false;
 const maxMenuOptions = 7;
+/** TI program basename (letters A–Z / digits only, max length 8) used for downloads and tokenizer. */
+let tinotesExportProgramBaseName = "TINOTES";
+/** Storage path root for navigation script (normally `home`; a folder path for subtree export). */
+let scriptExportRoot = "home";
+/** Base path for shortening menu titles in generated TI strings. */
+let scriptTitleBasePosition = "home";
+
+function sanitizeTiProgramName(name) {
+    if (typeof name !== "string" || name.trim() === "") {
+        return "TINOTES";
+    }
+    const cleaned = name.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    const base = cleaned.length === 0 ? "TN" : cleaned;
+    return base.length > 8 ? base.slice(0, 8) : base;
+}
+
+function isUnderExportSubtree(itemPath, rootPath) {
+    if (
+        typeof itemPath !== "string" ||
+        typeof rootPath !== "string" ||
+        rootPath.length === 0
+    ) {
+        return false;
+    }
+    return itemPath === rootPath || itemPath.startsWith(rootPath + "/");
+}
 downloadScriptBtn.addEventListener("click", () => {
-    prepareScriptForExport({ forceWarning: true });
-    download("TINOTES.txt", script);
+    prepareScriptForExport({ forceWarning: true, keepCurrentExportScope: true });
+    download(`${tinotesExportProgramBaseName}.txt`, script);
 });
 if (download8xpBtn) {
     download8xpBtn.addEventListener("click", () => {
         if (isBuilding8xp) {
             return;
         }
-        prepareScriptForExport({ forceWarning: true });
+        prepareScriptForExport({ forceWarning: true, keepCurrentExportScope: true });
         const text = script;
         isBuilding8xp = true;
         download8xpBtn.classList.add("btn-disabled");
@@ -30,11 +59,11 @@ if (download8xpBtn) {
             isBuilding8xp = false;
             download8xpBtn.classList.remove("btn-disabled");
         };
-        TINotesExport8xp.build8xp("TINOTES", text, calculatorType)
+        TINotesExport8xp.build8xp(tinotesExportProgramBaseName, text, calculatorType)
             .then((bytes) => {
-                TINotesExport8xp.downloadBinary("TINOTES.8xp", bytes);
+                TINotesExport8xp.downloadBinary(`${tinotesExportProgramBaseName}.8xp`, bytes);
                 swal({
-                    title: "Saved TINOTES.8xp",
+                    title: `Saved ${tinotesExportProgramBaseName}.8xp`,
                     text: "Send the file with TI Connect or your usual link software.",
                     icon: "success",
                     buttons: false,
@@ -80,37 +109,65 @@ copyScriptBtn.addEventListener("click", () => {
     });
 });
 
-function calculateItemSize() {
-    let itemSize = 0;
-    iterateStorage(function () {
-        itemSize += 1;
+function calculateItemSizeSubtree(rootPath) {
+    let size = 0;
+    iterateStorage(function (item, itemName) {
+        if (!isUnderExportSubtree(itemName, rootPath)) {
+            return;
+        }
+        size += 1;
     });
-    itemSize++;
-    return itemSize;
+    size++;
+    return size;
 }
 
-function calculateFolderSize() {
+function calculateItemSize(rootPath) {
+    const root =
+        typeof rootPath === "string" && rootPath.length > 0 ? rootPath : "home";
+    return calculateItemSizeSubtree(root);
+}
+
+function calculateFolderSizeSubtree(rootPath) {
     let folderSize = 0;
     iterateStorage(function (item, itemName, itemType) {
-        if (itemType === "folder") {
-            folderSize += 1;
+        if (itemType !== "folder") {
+            return;
         }
+        if (!isUnderExportSubtree(itemName, rootPath)) {
+            return;
+        }
+        folderSize += 1;
     });
     return folderSize;
 }
 
-function calculateEquationVarSize() {
+function calculateFolderSize(rootPath) {
+    const root =
+        typeof rootPath === "string" && rootPath.length > 0 ? rootPath : "home";
+    return calculateFolderSizeSubtree(root);
+}
+
+function calculateEquationVarSizeSubtree(rootPath) {
     let varSize = 0;
     iterateStorage(function (item, itemName, itemType) {
-        if (itemType === "equation") {
-            varSize += Object.keys(item.varEquations).length;
+        if (itemType !== "equation") {
+            return;
         }
+        if (!isUnderExportSubtree(itemName, rootPath)) {
+            return;
+        }
+        varSize += Object.keys(item.varEquations || {}).length;
     });
     return varSize;
 }
 
-function exportScript() {
-    prepareScriptForExport();
+function calculateEquationVarSize(rootPath) {
+    const root =
+        typeof rootPath === "string" && rootPath.length > 0 ? rootPath : "home";
+    return calculateEquationVarSizeSubtree(root);
+}
+
+function openExportScriptModal() {
     const popupBody = document.querySelector('#popup div.modal-body');
     let viewer = document.getElementById("viewer")
     if (viewer) {
@@ -138,7 +195,13 @@ function exportScript() {
 
 function prepareScriptForExport(options = {}) {
     const forceWarning = !!options.forceWarning;
-    generateScript();
+    if (typeof options.exportRoot === "string") {
+        generateScript({ exportRoot: options.exportRoot });
+    } else if (options.keepCurrentExportScope) {
+        generateScript({ exportRoot: scriptExportRoot });
+    } else {
+        generateScript({ exportRoot: homePosition });
+    }
     changeScriptFormat(defaultScriptFormat);
     // Normalize line endings for downloads/tokenizers.
     script = script.replace(/\n/g, "\r\n");
@@ -186,11 +249,27 @@ function selectAllItems() {
 
 }
 
-function generateScript() {
+function generateScript(options = {}) {
+    const requestedRoot =
+        typeof options.exportRoot === "string" ? options.exportRoot.trim() : "";
+    scriptExportRoot =
+        requestedRoot.length > 0 && isUnderExportSubtree(requestedRoot, homePosition)
+            ? requestedRoot
+            : homePosition;
+    scriptTitleBasePosition =
+        scriptExportRoot === homePosition ? homePosition : scriptExportRoot;
+
+    tinotesExportProgramBaseName =
+        scriptExportRoot === homePosition
+            ? "TINOTES"
+            : sanitizeTiProgramName(
+                  scriptExportRoot.substring(scriptExportRoot.lastIndexOf("/") + 1)
+              );
+
     // selectAllItems();
-    itemSize = calculateItemSize(); // reset item size
-    const folderSize = calculateFolderSize(); // all folders have "back" button which need labels
-    const equationVarSize = calculateEquationVarSize();
+    itemSize = calculateItemSize(scriptExportRoot); // reset item size
+    const folderSize = calculateFolderSize(scriptExportRoot); // all folders have "back" button which need labels
+    const equationVarSize = calculateEquationVarSize(scriptExportRoot);
     startEquationIndex = itemSize + folderSize + 1;
     equationIndex = startEquationIndex;
     exportSanitizationReport = createSanitizationReport();
@@ -199,7 +278,7 @@ function generateScript() {
     if (equationVarSize > 0) {
         script += `{0${",0".repeat(equationVarSize - 1)}}->|LV\n`;
     }
-    script += generateScriptHelper("home", 0);
+    script += generateScriptHelper(scriptExportRoot, 0);
     script += `${baseScript}`;
 }
 
@@ -213,7 +292,10 @@ function generateScriptHelper(position, index) {
         if (itemPosition === position) {
             index++;
             menuEntries.push({
-                text: sanitizeSourceCoderString(getEndOfActivePosition(itemName, position), `menu item: ${itemName}`),
+                text: sanitizeSourceCoderString(
+                    getEndOfActivePosition(itemName, scriptTitleBasePosition),
+                    `menu item: ${itemName}`
+                ),
                 target: index,
             });
             if (itemType === `file`) {
@@ -226,8 +308,11 @@ function generateScriptHelper(position, index) {
         }
     });
 
-    const sanitizedTitle = sanitizeSourceCoderString(getEndOfActivePosition(position, "home"), `menu title: ${position}`);
-    const menuPages = splitMenuEntries(menuEntries, position !== "home");
+    const sanitizedTitle = sanitizeSourceCoderString(
+        getEndOfActivePosition(position, scriptTitleBasePosition),
+        `menu title: ${position}`
+    );
+    const menuPages = splitMenuEntries(menuEntries, position !== scriptExportRoot);
     const pageLabels = menuPages.map(() => itemSize++);
     menuPages.forEach((pageEntries, pageIndex) => {
         const pageLabel = pageLabels[pageIndex];
@@ -243,7 +328,7 @@ function generateScriptHelper(position, index) {
         if (hasNext) {
             pageMenu += `,"More",${pageLabels[pageIndex + 1]}`;
         }
-        if (position !== "home") {
+        if (position !== scriptExportRoot) {
             pageMenu += `,"Back",${itemSize}`;
         }
         pageMenu += `)\n`;
@@ -251,7 +336,7 @@ function generateScriptHelper(position, index) {
     });
 
     const indexList = menuEntries.map((entry) => entry.target);
-    if (position !== "home") { // not at home position
+    if (position !== scriptExportRoot) { // not at export root
         homeMenu += `Lbl ${itemSize}\n`;
         homeMenu += `W-1->W\n|LA(W)->N\nGoto S\n`;
         itemSize++;
@@ -677,4 +762,29 @@ function download(filename, text) {
     element.click();
 
     document.body.removeChild(element);
+}
+
+/**
+ * Right-click Export: build a TI program from this folder and subfolders only.
+ * Depends on globals from script.js: homePosition, getItemFromStorage.
+ */
+function openExportScriptForFolderPath(folderStoragePath) {
+    if (
+        typeof folderStoragePath !== "string" ||
+        folderStoragePath.length === 0 ||
+        folderStoragePath === homePosition ||
+        typeof getItemFromStorage !== "function"
+    ) {
+        return;
+    }
+    const meta = getItemFromStorage(folderStoragePath);
+    if (!meta || meta.type !== "folder") {
+        return;
+    }
+    prepareScriptForExport({ exportRoot: folderStoragePath });
+    openExportScriptModal();
+    const popup = document.getElementById("popup");
+    if (popup) {
+        popup.style.display = "block";
+    }
 }

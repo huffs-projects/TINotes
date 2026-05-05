@@ -10,6 +10,7 @@ function loadGenerateScriptContext() {
     const fakeViewer = { select: noop, value: "", remove: noop };
     const fakePopupBody = { insertBefore: noop };
     const context = {
+        homePosition: "home",
         document: {
             getElementById: (id) => {
                 if (id === "viewer") {
@@ -90,7 +91,7 @@ test("sanitizeSourceCoderString strips diacritics instead of using fallback mark
 test("prepareScriptForExport regenerates and normalizes line endings", () => {
     const context = loadGenerateScriptContext();
     assert.equal(typeof context.prepareScriptForExport, "function");
-    assert.equal(typeof context.exportScript, "function");
+    assert.equal(typeof context.openExportScriptModal, "function");
 
     // Stub generation pipeline so we can test behavior deterministically.
     vm.runInContext(
@@ -152,6 +153,36 @@ test("splitMenuEntries paginates when back option is present", () => {
         context
     );
     assert.deepEqual(Array.from(context.pageSizes), [5, 5, 2]);
+});
+
+test("sanitizeTiProgramName keeps A-Z/0-9 and max length 8", () => {
+    const context = loadGenerateScriptContext();
+    vm.runInContext(
+        `
+        n1 = sanitizeTiProgramName("Chem-01!");
+        n2 = sanitizeTiProgramName("abcdefghijklmnop");
+    `,
+        context
+    );
+    assert.equal(context.n1, "CHEM01");
+    assert.equal(context.n2, "ABCDEFGH");
+});
+
+test("folder export root menu has no Back option", () => {
+    const context = loadGenerateScriptContext();
+    vm.runInContext(
+        `
+        scriptExportRoot = "home/Math";
+        scriptTitleBasePosition = "home/Math";
+        iterateStorage = (fn) => {
+            fn({ type: "file", content: "X" }, "home/Math/n1", "file", "home/Math", 0);
+        };
+        itemSize = 50;
+        out = generateScriptHelper("home/Math", 0);
+    `,
+        context
+    );
+    assert.equal(context.out.includes('"Back"'), false);
 });
 
 test("generateScriptHelper adds More/Prev for long sanitized menus", () => {

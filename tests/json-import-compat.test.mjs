@@ -47,6 +47,19 @@ test("normalizeImportPayloadText rejects empty payloads", () => {
     );
 });
 
+test("normalizeImportPayloadText strips accidental undefined prefix", () => {
+    const context = loadTransferDataContext();
+    assert.doesNotThrow(() => {
+        vm.runInContext(
+            `const raw = 'undefined{"version":1,"notebooks":{}}';
+             const trimmed = normalizeImportPayloadText(raw);
+             const parsed = JSON.parse(trimmed);
+             if (parsed.version !== 1) throw new Error("parse failed");`,
+            context
+        );
+    });
+});
+
 test("legacy payload format imports without version wrapper", () => {
     const context = loadTransferDataContext();
     assert.equal(typeof context.normalizeImportPayload, "function");

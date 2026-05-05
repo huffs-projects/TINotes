@@ -732,6 +732,7 @@ function getItemNamesAtPosition(position) {
 
 function restrictContextItems(itemLabel) {
     const pinToHomeBtn = document.querySelector(`li.context-menu__item[data-action="pinToHome"`);
+    const exportFolderTiBtn = document.querySelector('li.context-menu__item[data-action="exportFolderTi"]');
     const itemName = itemLabel.getAttribute("data-name");
     const itemType = getItemLabelType(itemLabel);
     console.log('TCL: restrictContextItems -> itemType', itemType);
@@ -741,6 +742,20 @@ function restrictContextItems(itemLabel) {
         } else {
             pinToHomeBtn.style.display = "block";
         }
+    }
+    if (exportFolderTiBtn) {
+        if (itemType === "folder" && typeof itemName === "string" && itemName.length > 0 && itemName !== homePosition) {
+            exportFolderTiBtn.style.display = "block";
+        } else {
+            exportFolderTiBtn.style.display = "none";
+        }
+    }
+}
+
+function exportFolderAsTiProgram(itemLabel) {
+    const folderPath = itemLabel.getAttribute("data-name");
+    if (typeof openExportScriptForFolderPath === "function") {
+        openExportScriptForFolderPath(folderPath);
     }
 }
 

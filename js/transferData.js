@@ -1,19 +1,43 @@
-const exportJsonBtn = document.getElementById("exportJsonBtn");
-const importJsonBtn = document.getElementById("importJsonBtn");
-const importJsonInput = document.getElementById("importJsonInput");
 const importFormatVersion = 1;
 
-if (exportJsonBtn) {
-    exportJsonBtn.addEventListener("click", exportNotebookJson);
+function showDialog(options) {
+    if (typeof swal === "function") {
+        swal(options);
+        return;
+    }
+    const title = options && options.title ? options.title : "TINotes";
+    const text = options && options.text ? options.text : "";
+    if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert(`${title}${text ? `\n\n${text}` : ""}`);
+        return;
+    }
+    console.log(title, text);
 }
-if (importJsonBtn) {
+
+let transferBindingsAttached = false;
+
+function attachTransferHandlers() {
+    const exportJsonBtn = document.getElementById("exportJsonBtn");
+    const importJsonBtn = document.getElementById("importJsonBtn");
+    const importJsonInput = document.getElementById("importJsonInput");
+    if (!exportJsonBtn || !importJsonBtn || !importJsonInput) {
+        return false;
+    }
+    if (transferBindingsAttached) {
+        return true;
+    }
+    exportJsonBtn.addEventListener("click", exportNotebookJson);
     importJsonBtn.addEventListener("click", () => {
         importJsonInput.value = "";
         importJsonInput.click();
     });
-}
-if (importJsonInput) {
     importJsonInput.addEventListener("change", importNotebookJson);
+    transferBindingsAttached = true;
+    return true;
+}
+
+if (!attachTransferHandlers() && typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("DOMContentLoaded", attachTransferHandlers, { once: true });
 }
 
 async function exportNotebookJson() {
@@ -48,7 +72,7 @@ async function exportNotebookJson() {
         } else {
             downloadTextFile("TINotes-backup.json", json);
         }
-        swal({
+        showDialog({
             title: "Export complete",
             text: `Exported ${Object.keys(notebooks).length} notebook(s).`,
             icon: "success",
@@ -56,7 +80,7 @@ async function exportNotebookJson() {
         });
     } catch (error) {
         console.error(error);
-        swal({
+        showDialog({
             title: "Export failed",
             text: error.message || "Unable to export notebooks to JSON.",
             icon: "error",
@@ -88,7 +112,7 @@ async function importNotebookJson(event) {
                 storeSelected: false,
             });
         }
-        swal({
+        showDialog({
             title: "Import complete",
             text: `Imported ${result.importedNotebookCount} notebook(s) and ${result.importedItemCount} item(s). Renamed ${result.renamedNotebookCount} notebook(s) and ${result.renamedItemCount} item(s).`,
             icon: "success",
@@ -96,7 +120,7 @@ async function importNotebookJson(event) {
         });
     } catch (error) {
         console.error(error);
-        swal({
+        showDialog({
             title: "Import failed",
             text: error.message || "Invalid JSON import file.",
             icon: "error",
@@ -274,6 +298,14 @@ function normalizeImportPayloadText(text) {
     }
     let s = text;
     while (s.length > 0 && s.charCodeAt(0) === 0xfeff) {
+        s = s.slice(1);
+    }
+    // Some broken exports can accidentally prepend the literal string "undefined".
+    while (s.startsWith("undefined")) {
+        s = s.slice("undefined".length);
+    }
+    // Drop leading NUL bytes seen in a few editor/export edge cases.
+    while (s.length > 0 && s.charCodeAt(0) === 0x0000) {
         s = s.slice(1);
     }
     s = s.trim();
